@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: chat-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: chatuser
+      POSTGRES_PASSWORD: chatpass
+      POSTGRES_DB: chatdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - chat_pg_data:/var/lib/postgresql/data
+
+volumes:
+  chat_pg_data:

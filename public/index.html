@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Chat Demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
+    input, select, button { padding: 8px; }
+    #log { border: 1px solid #ddd; height: 420px; overflow: auto; padding: 10px; }
+    .sys { color:#666; font-size: 13px; margin: 6px 0; }
+    .msg { margin: 6px 0; }
+    img { max-width: 260px; display:block; margin-top:6px; border:1px solid #eee; }
+    code { background:#f3f3f3; padding:2px 4px; border-radius:4px; }
+    .hint { color:#666; font-size: 12px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h2>채팅 데모 (DB/Git 없이)</h2>
+
+  <div class="row">
+    <label>Room <input id="roomId" value="room-1"></label>
+    <label>UserId <input id="userId" value="1001"></label>
+    <label>Role
+      <select id="role">
+        <option>USER</option>
+        <option>ADMIN</option>
+      </select>
+    </label>
+    <button id="joinBtn">Join</button>
+  </div>
+
+  <div class="row">
+    <select id="type">
+      <option value="TEXT">TEXT</option>
+      <option value="IMAGE">IMAGE(URL)</option>
+    </select>
+
+    <input id="content" style="width:420px" placeholder="텍스트 또는 이미지 URL">
+    <button id="sendBtn">Send</button>
+
+    <!-- 이미지 파일 업로드 & 전송 -->
+    <input type="file" id="imageFile" accept="image/*" />
+    <button id="uploadBtn">Upload & Send</button>
+  </div>
+
+  <div class="hint">
+    ※ 파일 업로드는 <code>/upload</code> API가 server.js에 있어야 동작합니다.
+  </div>
+
+  <div id="log"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const log = document.getElementById("log");
+    const roomIdEl = document.getElementById("roomId");
+    const userIdEl = document.getElementById("userId");
+    const roleEl = document.getElementById("role");
+    const typeEl = document.getElementById("type");
+    const contentEl = document.getElementById("content");
+
+    const imageFileEl = document.getElementById("imageFile");
+    const uploadBtn = document.getElementById("uploadBtn");
+
+    const socket = io();
+    let joined = false;
+
+    function add(html, cls="msg") {
+      const div = document.createElement("div");
+      div.className = cls;
+      div.innerHTML = html;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    document.getElementById("joinBtn").onclick = () => {
+      socket.emit("join", {
+        roomId: roomIdEl.value.trim(),
+        userId: userIdEl.value.trim(),
+        role: roleEl.value
+      });
+      joined = true;
+      add(`[SYSTEM] joined ${roomIdEl.value}`, "sys");
+    };
+
+    document.getElementById("sendBtn").onclick = () => {
+      if (!joined) return alert("Join 먼저!");
+      const type = typeEl.value;
+      const content = contentEl.value.trim();
+      if (!content) return;
+
+      socket.emit("message", {
+        roomId: roomIdEl.value.trim(),
+        userId: userIdEl.value.trim(),
+        role: roleEl.value,
+        type,
+        content
+      });
+      contentEl.value = "";
+    };
+
+    // ✅ 파일 업로드 → URL 받기 → 소켓으로 IMAGE 메시지 전송
+    uploadBtn.onclick = async () => {
+      if (!joined) return alert("Join 먼저!");
+      const file = imageFileEl.files && imageFileEl.files[0];
+      if (!file) return alert("이미지 파일을 선택하세요!");
+
+      try {
+        const form = new FormData();
+        form.append("image", file);
+
+        const res = await fetch("/upload", {
+          method: "POST",
+          body: form
+        });
+
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(`Upload failed: ${t}`);
+        }
+
+        const data = await res.json();
+        if (!data.ok || !data.url) throw new Error("Upload response invalid");
+
+        socket.emit("message", {
+          roomId: roomIdEl.value.trim(),
+          userId: userIdEl.value.trim(),
+          role: roleEl.value,
+          type: "IMAGE",
+          content: data.url   // 예: /uploads/xxx.png
+        });
+
+        imageFileEl.value = "";
+      } catch (e) {
+        alert(e.message || String(e));
+      }
+    };
+
+    socket.on("system", (p) => add(`[SYSTEM] ${p.message} (${p.at})`, "sys"));
+
+    socket.on("message", (p) => {
+      const head = `<b>${p.role}</b>(<code>${p.userId}</code>) <small>${p.at}</small>`;
+      if (p.type === "IMAGE") {
+        add(`${head}<div>🖼️ ${p.content}</div><img src="${p.content}">`);
+      } else {
+        add(`${head}<div>${p.content}</div>`);
+      }
+    });
+  </script>
+</body>
+</html>
